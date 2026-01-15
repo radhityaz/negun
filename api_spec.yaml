@@ -1,0 +1,113 @@
+openapi: 3.0.0
+info:
+  title: Exam System API (Offline-First)
+  description: API for managing exams, students, and handling offline-exam uploads.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080/api/v1
+paths:
+  /auth/login:
+    post:
+      summary: Login student/teacher
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Successful login
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      role:
+                        type: string
+
+  /exams/available:
+    get:
+      summary: List exams available for download
+      responses:
+        '200':
+          description: List of exams
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    title:
+                      type: string
+                    download_url:
+                      type: string
+                    hash:
+                      type: string
+
+  /exams/{examId}/upload-url:
+    post:
+      summary: Get presigned URL for uploading answer file (.ans)
+      parameters:
+        - name: examId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Upload URL generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  upload_url:
+                    type: string
+                  attempt_id:
+                    type: string
+
+  /attempts/confirm:
+    post:
+      summary: Confirm upload completion and register attempt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                attempt_id:
+                  type: string
+                file_hash:
+                  type: string
+                client_signature:
+                  type: string
+      responses:
+        '200':
+          description: Attempt registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "received"
+                  receipt_code:
+                    type: string
