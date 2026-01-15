@@ -67,3 +67,19 @@ Metode ini memanfaatkan Apple ID gratis siswa untuk menandatangani aplikasi seca
 - Setelah 7 hari, aplikasi tidak bisa dibuka (Expire).
 - Jika ujian > 7 hari, siswa harus "Refresh" app di AltStore (butuh koneksi ke Laptop Station lagi).
 - Ini solusi paling robust tanpa biaya $99.
+
+## 4. Build Web (PWA) untuk iOS (Alternatif Tanpa Install)
+Jika Sideloading terlalu rumit, gunakan versi Web App (PWA) untuk pengguna iOS.
+
+### Build
+```bash
+cd mobile
+flutter build web --release
+```
+Upload folder `build/web/` ke hosting statis (Vercel/Netlify/GitHub Pages).
+
+### Cara Pakai di iOS
+1. Siswa buka URL ujian di Safari.
+2. Klik tombol Share -> **Add to Home Screen**.
+3. Buka ikon App di Home Screen.
+4. **WAJIB**: Nyalakan **Guided Access** (Klik Power 3x) untuk mengunci layar agar tidak bisa pindah aplikasi.

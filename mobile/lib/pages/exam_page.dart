@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart'; // kIsWeb
 import 'package:flutter/material.dart';
 import '../models/exam_package.dart';
 import '../models/answer_package.dart';
@@ -29,8 +30,43 @@ class _ExamPageState extends State<ExamPage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    
+    // Check iOS Web: Prompt Guided Access
+    if (kIsWeb) {
+      // Mock detection, di real app bisa cek UserAgent
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showGuidedAccessPrompt());
+    }
+
     _loadExam();
     _startAutoSave();
+  }
+
+  void _showGuidedAccessPrompt() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Mode Aman Wajib (iOS)"),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text("Untuk mencegah kecurangan, Anda WAJIB mengaktifkan Guided Access."),
+            SizedBox(height: 10),
+            Text("Cara Aktifkan:", style: TextStyle(fontWeight: FontWeight.bold)),
+            Text("1. Buka Settings -> Accessibility -> Guided Access (On)."),
+            Text("2. Kembali ke browser ini."),
+            Text("3. Tekan Tombol Power 3x dengan cepat."),
+            Text("4. Klik 'Start' di pojok kanan atas."),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Saya Sudah Mengaktifkan"),
+          )
+        ],
+      ),
+    );
   }
 
   @override
