@@ -3,14 +3,17 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"exam-system-backend/database"
+	"exam-system-backend/models"
 )
 
 // ListAvailableExams: Siswa melihat daftar ujian yang sudah dipublish
 func ListAvailableExams(c *gin.Context) {
 	// Di sistem nyata, filter berdasarkan kelas siswa
-	// Untuk MVP, return semua ujian yang ada di memory
+	// Untuk MVP, return semua ujian yang ada di DB dengan Version > 0
 	
 	type ExamResponse struct {
 		ID           string `json:"id"`
@@ -21,21 +24,25 @@ func ListAvailableExams(c *gin.Context) {
 	}
 
 	var response []ExamResponse
+	var exams []models.ExamHeader
+
+	// Query DB where version > 0
+	if result := database.DB.Where("version > ?", 0).Find(&exams); result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		return
+	}
 
 	for _, exam := range exams {
-		// Hanya tampilkan yang punya Version > 0 (sudah dipublish)
-		if exam.Version > 0 {
-			filename := fmt.Sprintf("%s-v%d.exam", exam.ExamID, exam.Version)
-			downloadURL := fmt.Sprintf("http://localhost:8080/files/%s", filename)
-			
-			response = append(response, ExamResponse{
-				ID:           exam.ExamID,
-				Title:        exam.Title,
-				DownloadURL:  downloadURL,
-				Version:      exam.Version,
-				DurationMins: exam.DurationMins,
-			})
-		}
+		filename := fmt.Sprintf("%s-v%d.exam", exam.ExamID, exam.Version)
+		downloadURL := fmt.Sprintf("http://localhost:8080/files/%s", filename)
+		
+		response = append(response, ExamResponse{
+			ID:           exam.ExamID,
+			Title:        exam.Title,
+			DownloadURL:  downloadURL,
+			Version:      exam.Version,
+			DurationMins: exam.DurationMins,
+		})
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -73,6 +80,7 @@ func ConfirmAttempt(c *gin.Context) {
 
 	// TODO: Validasi signature & hash file (Integrity Check)
 	// Update status di DB jadi 'submitted'
+	// For now, just return success
 
 	c.JSON(http.StatusOK, gin.H{
 		"status": "received",

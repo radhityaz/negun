@@ -11,14 +11,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"exam-system-backend/models"
 	"exam-system-backend/pkg/crypto"
+	"exam-system-backend/database"
 )
-
-// In-memory store for MVP (Replace with DB later)
-var exams = make(map[string]models.ExamHeader)
-var questions = make(map[string][]models.Question)
-
-// Kunci enkripsi statis untuk MVP (Ganti dengan manajemen kunci yang aman nanti)
-var masterKey = []byte("01234567890123456789012345678901") // 32 bytes
 
 // CreateExam: Guru membuat metadata ujian baru
 func CreateExam(c *gin.Context) {
@@ -31,8 +25,10 @@ func CreateExam(c *gin.Context) {
 	req.ExamID = fmt.Sprintf("exam-%d", time.Now().Unix())
 	req.CreatedAt = time.Now()
 	
-	exams[req.ExamID] = req
-	questions[req.ExamID] = []models.Question{} // Init question list
+	if result := database.DB.Create(&req); result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Exam created", "exam": req})
 }
@@ -40,7 +36,10 @@ func CreateExam(c *gin.Context) {
 // AddQuestion: Guru menambahkan soal ke ujian
 func AddQuestion(c *gin.Context) {
 	examID := c.Param("examId")
-	if _, exists := exams[examID]; !exists {
+	
+	// Check if exam exists
+	var exam models.ExamHeader
+	if result := database.DB.First(&exam, "exam_id = ?", examID); result.Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Exam not found"})
 		return
 	}
@@ -51,8 +50,23 @@ func AddQuestion(c *gin.Context) {
 		return
 	}
 	
-	q.ID = fmt.Sprintf("q-%d", len(questions[examID])+1)
-	questions[examID] = append(questions[examID], q)
+	// Count existing questions to generate ID
+	var count int64
+	database.DB.Model(&models.Question{}).Where("exam_id = ?", examID).Count(&count)
+	
+	q.ID = fmt.Sprintf("%s-q-%d", examID, count+1) // Make ID unique globally by prefixing examID? Or just q-X.
+	// Previously it was q-%d. Since Question.ID is Primary Key, it must be unique. 
+	// Ideally use UUID or auto-increment ID. But let's stick to string ID for now but make it unique.
+	// Or maybe just let the user provide it? No, the code generates it.
+	// Let's use a composite string or just UUID.
+	// For now: examID-q-index
+	q.ID = fmt.Sprintf("%s-q-%d", examID, count+1)
+	q.ExamID = examID
+	
+	if result := database.DB.Create(&q); result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Question added", "question": q})
 }
@@ -60,21 +74,22 @@ func AddQuestion(c *gin.Context) {
 // PublishExam: Generate file .exam terenkripsi
 func PublishExam(c *gin.Context) {
 	examID := c.Param("examId")
-	header, exists := exams[examID]
-	if !exists {
+	
+	var header models.ExamHeader
+	// Preload Questions and Options
+	if result := database.DB.Preload("Questions.Options").First(&header, "exam_id = ?", examID); result.Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Exam not found"})
 		return
 	}
 
-	qList := questions[examID]
-	if len(qList) == 0 {
+	if len(header.Questions) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Cannot publish exam with no questions"})
 		return
 	}
 
 	// 1. Siapkan Payload
 	payload := models.ExamPayload{
-		Questions: qList,
+		Questions: header.Questions,
 		Config: models.ExamConfig{
 			AllowWifi: false,
 			RandomizeOrder: true,
@@ -83,6 +98,14 @@ func PublishExam(c *gin.Context) {
 	}
 
 	payloadBytes, _ := json.Marshal(payload)
+
+	// Get Master Key from Env
+	masterKeyStr := os.Getenv("MASTER_KEY")
+	if len(masterKeyStr) != 32 {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid MASTER_KEY configuration"})
+		return
+	}
+	masterKey := []byte(masterKeyStr)
 
 	// 2. Enkripsi Payload
 	ivHex, ciphertextB64, err := crypto.EncryptAES(string(payloadBytes), masterKey)
@@ -94,9 +117,11 @@ func PublishExam(c *gin.Context) {
 	// 3. Update Header dengan IV
 	header.EncryptionIV = ivHex
 	header.Version += 1
+	
+	// Save version update to DB
+	database.DB.Save(&header)
 
 	// 4. Hitung Signature (HMAC) dari Header + Ciphertext
-	// Sederhana: sign string "examID.version.ciphertext"
 	signData := fmt.Sprintf("%s.%d.%s", header.ExamID, header.Version, ciphertextB64)
 	signature := crypto.ComputeHMAC(signData, masterKey)
 
@@ -110,15 +135,19 @@ func PublishExam(c *gin.Context) {
 	// 6. Simpan ke File System (Storage)
 	pkgBytes, _ := json.Marshal(pkg)
 	filename := fmt.Sprintf("%s-v%d.exam", examID, header.Version)
+	
+	// Ensure storage directory exists
+	if err := os.MkdirAll(filepath.Join("storage", "exams"), 0755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create storage directory"})
+		return
+	}
+	
 	filePath := filepath.Join("storage", "exams", filename)
 	
 	if err := os.WriteFile(filePath, pkgBytes, 0644); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to write file"})
 		return
 	}
-
-	// 7. Update status ujian (di memory/DB)
-	exams[examID] = header
 
 	// Return URL download (simulasi)
 	downloadURL := fmt.Sprintf("http://localhost:8080/files/%s", filename)

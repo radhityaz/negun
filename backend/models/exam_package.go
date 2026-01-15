@@ -13,7 +13,7 @@ type ExamPackage struct {
 
 // ExamHeader berisi metadata publik (tidak terenkripsi) agar app bisa validasi awal
 type ExamHeader struct {
-	ExamID        string    `json:"exam_id"`
+	ExamID        string    `json:"exam_id" gorm:"primaryKey"`
 	Title         string    `json:"title"`
 	Version       int       `json:"version"`
 	EncryptionIV  string    `json:"iv"` // Initialization Vector untuk AES
@@ -21,6 +21,9 @@ type ExamHeader struct {
 	ValidUntil    time.Time `json:"valid_until"`
 	DurationMins  int       `json:"duration_mins"`
 	CreatedAt     time.Time `json:"created_at"`
+	
+	// Relation
+	Questions []Question `json:"-" gorm:"foreignKey:ExamID"`
 }
 
 // ExamPayload adalah isi soal yang dienkripsi
@@ -36,15 +39,19 @@ type ExamConfig struct {
 }
 
 type Question struct {
-	ID      string   `json:"id"`
+	ID      string   `json:"id" gorm:"primaryKey"`
+	ExamID  string   `json:"exam_id"` // FK
 	Type    string   `json:"type"` // "mc", "essay"
 	Content string   `json:"content"` // HTML/Markdown
-	Options []Option `json:"options,omitempty"`
+	Options []Option `json:"options,omitempty" gorm:"foreignKey:QuestionID"`
 	Points  int      `json:"points"`
 }
 
 type Option struct {
-	ID      string `json:"id"`
-	Content string `json:"content"`
-	IsCorrect bool `json:"is_correct,omitempty"` // Bisa disembunyikan/dihapus sebelum dipackage
+	DBID       uint   `json:"-" gorm:"primaryKey"`
+	QuestionID string `json:"-"`
+	
+	ID         string `json:"id" gorm:"column:option_label"` // "A", "B"
+	Content    string `json:"content"`
+	IsCorrect  bool   `json:"is_correct,omitempty"` 
 }

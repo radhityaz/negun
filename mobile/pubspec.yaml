@@ -14,8 +14,10 @@ dependencies:
   http: ^1.1.0
   crypto: ^3.0.3
   flutter_secure_storage: ^9.0.0
-  # connectivity_plus: ^5.0.0 # For connection check
-  # wakelock_plus: ^1.1.0 # Keep screen on
+  connectivity_plus: ^5.0.0
+  wakelock_plus: ^1.1.0
+  share_plus: ^7.0.0 # Added for Manual Export
+  permission_handler: ^11.0.0 # For storage permission if needed
 
 dev_dependencies:
   flutter_test:

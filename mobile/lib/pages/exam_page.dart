@@ -1,9 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart'; // kIsWeb
 import 'package:flutter/material.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../models/exam_package.dart';
 import '../models/answer_package.dart';
 import '../services/exam_service.dart';
+import 'package:exam_app_offline/services/api_service.dart';
 
 class ExamPage extends StatefulWidget {
   final String examId;
@@ -19,7 +23,18 @@ class _ExamPageState extends State<ExamPage> with WidgetsBindingObserver {
   ExamPayload? _payload;
   bool _isLoading = true;
   String? _error;
-  bool _isOffline = true; // Mock status koneksi
+  
+  // Connectivity
+  final Connectivity _connectivity = Connectivity();
+  StreamSubscription<ConnectivityResult>? _connectivitySubscription; // For older versions
+  // Note: newer connectivity_plus might use List<ConnectivityResult>
+  // We will try to handle compatibility or assume v5.0 behavior (single result or list depending on exact version)
+  // Let's use a timer check as a backup for robust detection
+  
+  bool _isLocked = false;
+
+  // Storage
+  final _storage = const FlutterSecureStorage();
 
   // State Ujian
   int _currentIndex = 0;
@@ -31,14 +46,84 @@ class _ExamPageState extends State<ExamPage> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     
-    // Check iOS Web: Prompt Guided Access
     if (kIsWeb) {
-      // Mock detection, di real app bisa cek UserAgent
       WidgetsBinding.instance.addPostFrameCallback((_) => _showGuidedAccessPrompt());
     }
 
     _loadExam();
     _startAutoSave();
+    _initConnectivityMonitor();
+  }
+
+  void _initConnectivityMonitor() {
+    // Check initial state
+    _checkConnectivity();
+
+    // Listen to changes
+    // Using Stream.periodic as a fallback/robust checker + listener
+    _connectivity.onConnectivityChanged.listen((result) {
+      // Handle both List<ConnectivityResult> and ConnectivityResult for compatibility
+      // But since we can't dynamic dispatch easily here without knowing version, 
+      // let's rely on _checkConnectivity logic which pulls current state.
+      _checkConnectivity();
+    });
+  }
+
+  Future<void> _checkConnectivity() async {
+    // Bypass for Web/Emulator if needed (optional)
+    // if (kDebugMode) return; 
+
+    final result = await _connectivity.checkConnectivity();
+    // ConnectivityResult.none means offline.
+    // result might be ConnectivityResult (enum)
+    
+    bool isOnline = result != ConnectivityResult.none;
+    
+    if (isOnline) {
+      if (!_isLocked) {
+        setState(() {
+          _isLocked = true;
+        });
+        _showLockDialog();
+      }
+    } else {
+      if (_isLocked) {
+        Navigator.of(context, rootNavigator: true).pop(); // Close Dialog
+        setState(() {
+          _isLocked = false;
+        });
+      }
+    }
+  }
+
+  void _showLockDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => WillPopScope(
+        onWillPop: () async => false,
+        child: AlertDialog(
+          title: const Text("UJIAN DIHENTIKAN"),
+          content: const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.wifi_off, size: 50, color: Colors.red),
+              SizedBox(height: 10),
+              Text("Koneksi Internet Terdeteksi!"),
+              Text("Matikan Data Seluler & WiFi untuk melanjutkan."),
+            ],
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () {
+                _checkConnectivity(); // Re-check manually
+              },
+              child: const Text("Saya Sudah Offline"),
+            )
+          ],
+        ),
+      ),
+    );
   }
 
   void _showGuidedAccessPrompt() {
@@ -73,10 +158,10 @@ class _ExamPageState extends State<ExamPage> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _autoSaveTimer?.cancel();
+    _connectivitySubscription?.cancel();
     super.dispose();
   }
 
-  // Detect App Focus (Anti-Cheat Sederhana)
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
@@ -87,14 +172,18 @@ class _ExamPageState extends State<ExamPage> with WidgetsBindingObserver {
 
   Future<void> _loadExam() async {
     try {
-      // 1. Cek Koneksi (Mock: Anggap offline)
-      // if (await Connectivity().checkConnectivity() != ConnectivityResult.none) {
-      //   throw Exception("Matikan internet untuk memulai ujian!");
-      // }
+      // Initial Check
+      await _checkConnectivity();
+      if (_isLocked) return;
 
-      // 2. Load & Decrypt
       final payload = await ExamService.loadAndDecryptExam(widget.examId, widget.version);
       
+      // Load saved answers if any
+      String? savedAnswers = await _storage.read(key: "ans_${widget.examId}");
+      if (savedAnswers != null) {
+        _answers = jsonDecode(savedAnswers);
+      }
+
       setState(() {
         _payload = payload;
         _isLoading = false;
@@ -108,66 +197,60 @@ class _ExamPageState extends State<ExamPage> with WidgetsBindingObserver {
   }
 
   void _startAutoSave() {
-    _autoSaveTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
-      // TODO: Save _answers to Encrypted Local File
-      print("Autosaving answers...");
+    _autoSaveTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
+      await _storage.write(
+        key: "ans_${widget.examId}", 
+        value: jsonEncode(_answers)
+      );
+      print("Autosaved to SecureStorage");
     });
   }
 
-import 'package:exam_app_offline/services/api_service.dart'; // Add import
-
-// ... (kode lain tetap sama)
-
   Future<void> _submitExam() async {
-    // 1. Finalize Attempt -> Create .ans file
     try {
       final file = await ExamService.sealExamAttempt(
         widget.examId, 
-        "student-123", // Mock Student ID
+        "student-123", 
         _answers, 
-        [] // Mock Logs
+        [] 
       );
       
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Jawaban dikunci. Menghubungkan ke server...")));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Jawaban dikunci. Silakan nyalakan internet.")));
       
-      // 2. Upload Logic
-      // Asumsi: Di real app, ini akan menampilkan dialog "Nyalakan Internet" dulu
-      // dan punya retry logic yang lebih robust.
+      // Allow user to go online now
+      // Note: In real app, we might need to disable the lock listener here
+      _connectivitySubscription?.cancel(); // Stop listening
       
+      bool success = false;
+      String message = "";
+      
+      // Retry loop or manual trigger
       try {
         String receipt = await ApiService.uploadAnswerFile(widget.examId, file);
-        
-        // 3. Show Success & Receipt
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (ctx) => AlertDialog(
-            title: const Text("Berhasil Dikirim!"),
-            content: Text("Kode Bukti (Receipt):\n$receipt\n\nSimpan kode ini/screenshot."),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(ctx); // Close Dialog
-                  Navigator.pop(context); // Close Exam Page -> Back to Dashboard
-                },
-                child: const Text("Tutup"),
-              )
-            ],
-          ),
-        );
-      } catch (uploadError) {
-        // Upload gagal, tapi file aman tersimpan di HP
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text("Gagal Upload"),
-            content: Text("Koneksi gagal: $uploadError\n\nJawaban SUDAH TERSIMPAN di HP. Cari sinyal yang lebih baik lalu coba upload lagi dari menu Dashboard."),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("OK"))
-            ],
-          ),
-        );
+        success = true;
+        message = "Kode Bukti (Receipt):\n$receipt";
+        // Clear local storage on success? Or keep as backup? Keep as backup.
+      } catch (e) {
+        message = "Gagal Upload: $e\n\nFile aman tersimpan di HP.";
       }
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: Text(success ? "Berhasil!" : "Info Upload"),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                Navigator.pop(context);
+              },
+              child: const Text("Tutup"),
+            )
+          ],
+        ),
+      );
 
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Gagal submit: $e")));
@@ -185,18 +268,16 @@ import 'package:exam_app_offline/services/api_service.dart'; // Add import
     return Scaffold(
       appBar: AppBar(
         title: Text("Soal ${_currentIndex + 1} / $totalQ"),
-        automaticallyImplyLeading: false, // Disable Back Button
+        automaticallyImplyLeading: false, 
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Konten Soal
             Text(question.content, style: const TextStyle(fontSize: 18)),
             const SizedBox(height: 20),
             
-            // Opsi Jawaban
             ...question.options.map((opt) => RadioListTile(
               title: Text(opt.content),
               value: opt.id,
@@ -210,7 +291,6 @@ import 'package:exam_app_offline/services/api_service.dart'; // Add import
 
             const Spacer(),
             
-            // Navigasi
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [

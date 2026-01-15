@@ -7,8 +7,21 @@ import '../models/exam_package.dart';
 import 'crypto_service.dart';
 
 class ExamService {
-  // Key harus sama dengan backend (untuk MVP hardcode, nanti secure storage)
+  // Key harus sama dengan backend
+  // TODO: Move this to Flutter Secure Storage or Build Config/Env
   static const String masterKey = "01234567890123456789012345678901"; 
+
+  // Helper: List Downloaded Exams
+  static Future<List<File>> getDownloadedExams() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return dir.listSync().whereType<File>().where((f) => f.path.endsWith('.exam')).toList();
+  }
+
+  // Helper: List Pending Answers
+  static Future<List<File>> getPendingAnswers() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return dir.listSync().whereType<File>().where((f) => f.path.endsWith('.ans')).toList();
+  }
 
   // Download file .exam dari URL dan simpan ke local storage
   static Future<File> downloadExam(String url, String examId, int version) async {
@@ -51,18 +64,8 @@ class ExamService {
   // Finalisasi Ujian: Bungkus jawaban jadi file .ans terenkripsi
   static Future<File> sealExamAttempt(String examId, String studentId, Map<String, dynamic> answers, List<dynamic> logs) async {
     final attemptId = "att-${DateTime.now().millisecondsSinceEpoch}";
-    final ivHex = "random_iv_placeholder"; // Nanti generate real random
-
-    // 1. Siapkan Header & Payload
-    final header = AnswerHeader(
-      examId: examId,
-      studentId: studentId,
-      attemptId: attemptId,
-      deviceId: "device-uuid-123", // TODO: Get Real Device ID
-      submitTime: DateTime.now(),
-      iv: ivHex,
-    );
-
+    
+    // 1. Encrypt Payload FIRST to get IV
     final payloadData = AnswerPayload(
       answers: answers.entries.map((e) => AnswerItem(
         questionId: e.key, 
@@ -72,18 +75,29 @@ class ExamService {
       logs: logs.map((e) => AuditLog(event: e['event'], timestamp: e['ts'])).toList(),
     );
 
-    // 2. Encrypt Payload
     final payloadJson = jsonEncode(payloadData.toJson());
     final encrypted = CryptoService.encryptAES(payloadJson, masterKey);
-    
+    final ciphertext = encrypted['ciphertext']!;
+    final ivHex = encrypted['iv']!;
+
+    // 2. Siapkan Header
+    final header = AnswerHeader(
+      examId: examId,
+      studentId: studentId,
+      attemptId: attemptId,
+      deviceId: "device-uuid-123", // TODO: Get Real Device ID
+      submitTime: DateTime.now(),
+      iv: ivHex,
+    );
+
     // 3. Sign Package
-    final signData = "$attemptId.${encrypted['ciphertext']}";
+    final signData = "$attemptId.$ciphertext";
     final signature = CryptoService.computeHMAC(signData, masterKey);
 
     // 4. Create Package
     final pkg = AnswerPackage(
       header: header,
-      payload: encrypted['ciphertext']!,
+      payload: ciphertext,
       signature: signature,
     );
 

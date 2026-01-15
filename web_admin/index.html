@@ -13,7 +13,13 @@
 <body class="bg-light">
 
 <div class="container">
-    <h2 class="mb-4">Panel Guru - Sistem Ujian Offline</h2>
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Panel Guru - Sistem Ujian Offline</h2>
+        <div class="input-group" style="width: 300px;">
+            <span class="input-group-text">Admin Secret</span>
+            <input type="password" class="form-control" id="adminSecret" placeholder="Masukkan Kode Rahasia">
+        </div>
+    </div>
     
     <!-- 1. Buat Ujian Baru -->
     <div class="card">
@@ -86,6 +92,20 @@
     let currentExamId = '';
     let questionCount = 0;
 
+    // Load secret from localStorage
+    const secretInput = document.getElementById('adminSecret');
+    secretInput.value = localStorage.getItem('adminSecret') || '';
+    secretInput.addEventListener('change', () => {
+        localStorage.setItem('adminSecret', secretInput.value);
+    });
+
+    function getHeaders() {
+        return {
+            'Content-Type': 'application/json',
+            'X-Admin-Secret': secretInput.value
+        };
+    }
+
     // 1. Create Exam
     document.getElementById('createExamForm').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -95,7 +115,7 @@
         try {
             const res = await fetch(`${API_URL}/exams`, {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: getHeaders(),
                 body: JSON.stringify({ title, duration_mins: duration, version: 0 })
             });
             const data = await res.json();
@@ -106,8 +126,10 @@
                 document.getElementById('createResult').innerText = `Sukses! ID: ${currentExamId}`;
                 document.getElementById('questionCard').style.display = 'block';
                 document.getElementById('publishCard').style.display = 'block';
+            } else {
+                alert('Gagal: ' + data.error);
             }
-        } catch (err) { alert('Gagal connect backend'); }
+        } catch (err) { alert('Gagal connect backend: ' + err); }
     });
 
     // 2. Add Question
@@ -127,7 +149,7 @@
         try {
             const res = await fetch(`${API_URL}/exams/${currentExamId}/questions`, {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: getHeaders(),
                 body: JSON.stringify({ content, type, options, points: 10 })
             });
             
@@ -135,6 +157,8 @@
                 questionCount++;
                 document.getElementById('qCount').innerText = questionCount;
                 document.getElementById('addQuestionForm').reset();
+            } else {
+                alert('Gagal simpan soal');
             }
         } catch (err) { alert('Gagal simpan soal'); }
     });
@@ -146,7 +170,10 @@
         if(!confirm("Yakin publish? File akan digenerate dan tidak bisa diedit lagi.")) return;
 
         try {
-            const res = await fetch(`${API_URL}/exams/${currentExamId}/publish`, { method: 'POST' });
+            const res = await fetch(`${API_URL}/exams/${currentExamId}/publish`, { 
+                method: 'POST',
+                headers: getHeaders()
+            });
             const data = await res.json();
             
             if(res.ok) {
