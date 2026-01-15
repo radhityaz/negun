@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exam Admin Panel</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .container { max-width: 800px; margin-top: 30px; }
+        .card { margin-bottom: 20px; }
+    </style>
+</head>
+<body class="bg-light">
+
+<div class="container">
+    <h2 class="mb-4">Panel Guru - Sistem Ujian Offline</h2>
+    
+    <!-- 1. Buat Ujian Baru -->
+    <div class="card">
+        <div class="card-header bg-primary text-white">1. Buat Ujian Baru</div>
+        <div class="card-body">
+            <form id="createExamForm">
+                <div class="mb-3">
+                    <label class="form-label">Judul Ujian</label>
+                    <input type="text" class="form-control" id="examTitle" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Durasi (Menit)</label>
+                    <input type="number" class="form-control" id="examDuration" value="60">
+                </div>
+                <button type="submit" class="btn btn-primary">Buat Draft Ujian</button>
+            </form>
+            <div id="createResult" class="mt-2 text-success"></div>
+        </div>
+    </div>
+
+    <!-- 2. Tambah Soal -->
+    <div class="card" id="questionCard" style="display:none;">
+        <div class="card-header bg-success text-white">2. Tambah Soal (ID: <span id="currentExamId"></span>)</div>
+        <div class="card-body">
+            <form id="addQuestionForm">
+                <div class="mb-3">
+                    <label class="form-label">Pertanyaan</label>
+                    <textarea class="form-control" id="qContent" rows="3" required></textarea>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Tipe Soal</label>
+                    <select class="form-select" id="qType">
+                        <option value="mc">Pilihan Ganda</option>
+                        <option value="essay">Esai</option>
+                    </select>
+                </div>
+                
+                <div id="optionsContainer">
+                    <label class="form-label">Opsi Jawaban (Pisahkan dengan koma)</label>
+                    <input type="text" class="form-control" id="qOptions" placeholder="Ayam, Bebek, Sapi, Kambing">
+                </div>
+
+                <button type="submit" class="btn btn-success mt-3">Simpan Soal</button>
+            </form>
+            <div id="questionList" class="mt-3">
+                <p><strong>Soal tersimpan: <span id="qCount">0</span></strong></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. Publish -->
+    <div class="card" id="publishCard" style="display:none;">
+        <div class="card-header bg-danger text-white">3. Publish & Generate File</div>
+        <div class="card-body">
+            <p>Jika sudah selesai input soal, klik publish untuk menghasilkan file <code>.exam</code> yang terenkripsi.</p>
+            <button id="btnPublish" class="btn btn-danger w-100">PUBLISH UJIAN SEKARANG</button>
+            
+            <div id="publishResult" class="mt-3 alert alert-info" style="display:none;">
+                <h5>Berhasil!</h5>
+                <p>File Ujian: <a href="#" id="downloadLink" target="_blank">Download .exam</a></p>
+                <p><small>Bagikan file ini ke siswa atau suruh mereka download dari aplikasi.</small></p>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    const API_URL = 'http://localhost:8080/api/v1';
+    let currentExamId = '';
+    let questionCount = 0;
+
+    // 1. Create Exam
+    document.getElementById('createExamForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const title = document.getElementById('examTitle').value;
+        const duration = parseInt(document.getElementById('examDuration').value);
+
+        try {
+            const res = await fetch(`${API_URL}/exams`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ title, duration_mins: duration, version: 0 })
+            });
+            const data = await res.json();
+            
+            if(res.ok) {
+                currentExamId = data.exam.exam_id;
+                document.getElementById('currentExamId').innerText = currentExamId;
+                document.getElementById('createResult').innerText = `Sukses! ID: ${currentExamId}`;
+                document.getElementById('questionCard').style.display = 'block';
+                document.getElementById('publishCard').style.display = 'block';
+            }
+        } catch (err) { alert('Gagal connect backend'); }
+    });
+
+    // 2. Add Question
+    document.getElementById('addQuestionForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if(!currentExamId) return;
+
+        const content = document.getElementById('qContent').value;
+        const type = document.getElementById('qType').value;
+        const optionsRaw = document.getElementById('qOptions').value;
+        
+        const options = type === 'mc' ? optionsRaw.split(',').map((o, i) => ({
+            id: String.fromCharCode(65+i), // A, B, C...
+            content: o.trim()
+        })) : [];
+
+        try {
+            const res = await fetch(`${API_URL}/exams/${currentExamId}/questions`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ content, type, options, points: 10 })
+            });
+            
+            if(res.ok) {
+                questionCount++;
+                document.getElementById('qCount').innerText = questionCount;
+                document.getElementById('addQuestionForm').reset();
+            }
+        } catch (err) { alert('Gagal simpan soal'); }
+    });
+
+    // 3. Publish
+    document.getElementById('btnPublish').addEventListener('click', async () => {
+        if(!currentExamId) return;
+        
+        if(!confirm("Yakin publish? File akan digenerate dan tidak bisa diedit lagi.")) return;
+
+        try {
+            const res = await fetch(`${API_URL}/exams/${currentExamId}/publish`, { method: 'POST' });
+            const data = await res.json();
+            
+            if(res.ok) {
+                document.getElementById('publishResult').style.display = 'block';
+                document.getElementById('downloadLink').href = data.file_url;
+                document.getElementById('downloadLink').innerText = `Download ${currentExamId}-v1.exam`;
+            } else {
+                alert('Gagal publish: ' + data.error);
+            }
+        } catch (err) { alert('Error publishing'); }
+    });
+</script>
+
+</body>
+</html>

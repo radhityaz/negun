@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'models/exam_package.dart';
+import 'services/api_service.dart';
 
 void main() {
   runApp(const ExamApp());
@@ -44,7 +46,7 @@ class _LoginPageState extends State<LoginPage> {
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: () {
-                  // TODO: Implement Login Logic
+                  // TODO: Implement Real Login
                   Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const DashboardPage()));
                 },
                 child: const Text('Masuk'),
@@ -59,26 +61,68 @@ class _LoginPageState extends State<LoginPage> {
   }
 }
 
-class DashboardPage extends StatelessWidget {
+class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
+
+  @override
+  State<DashboardPage> createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends State<DashboardPage> {
+  late Future<List<ExamHeader>> futureExams;
+
+  @override
+  void initState() {
+    super.initState();
+    futureExams = ApiService.fetchAvailableExams();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Daftar Ujian')),
-      body: ListView(
-        children: [
-          ListTile(
-            title: const Text('Ujian Matematika Akhir'),
-            subtitle: const Text('60 Menit • Wajib Offline'),
-            trailing: ElevatedButton(
-              onPressed: () {
-                // TODO: Download & Start Exam
-              },
-              child: const Text('Download'),
-            ),
-          ),
-        ],
+      body: FutureBuilder<List<ExamHeader>>(
+        future: futureExams,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          } else if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}\nPastikan backend jalan & koneksi aman.'));
+          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(child: Text('Belum ada ujian tersedia.'));
+          }
+
+          return ListView.builder(
+            itemCount: snapshot.data!.length,
+            itemBuilder: (context, index) {
+              final exam = snapshot.data![index];
+              return Card(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: ListTile(
+                  title: Text(exam.title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: Text('Durasi: ${exam.durationMins} Menit • Versi ${exam.version}'),
+                  trailing: ElevatedButton(
+                    onPressed: () {
+                      // TODO: Download Action
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Download dimulai... (Mock)')),
+                      );
+                    },
+                    child: const Text('Download'),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          setState(() {
+            futureExams = ApiService.fetchAvailableExams();
+          });
+        },
+        child: const Icon(Icons.refresh),
       ),
     );
   }

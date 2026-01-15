@@ -5,18 +5,28 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"exam-system-backend/handlers"
 )
 
 func main() {
 	r := gin.Default()
 
+	// Serve static files (simulasi CDN/Storage)
+	r.Static("/files", "./storage/exams")
+
 	// Setup Routes
 	api := r.Group("/api/v1")
 	{
+		// Teacher Routes
+		api.POST("/exams", handlers.CreateExam)
+		api.POST("/exams/:examId/questions", handlers.AddQuestion)
+		api.POST("/exams/:examId/publish", handlers.PublishExam)
+
+		// Student Routes
 		api.POST("/auth/login", AuthLogin)
-		api.GET("/exams/available", ListExams)
-		api.POST("/exams/:examId/upload-url", GetUploadURL)
-		api.POST("/attempts/confirm", ConfirmAttempt)
+		api.GET("/exams/available", handlers.ListAvailableExams)
+		api.POST("/exams/:examId/upload-url", handlers.GetUploadURL)
+		api.POST("/attempts/confirm", handlers.ConfirmAttempt)
 	}
 
 	log.Println("Server starting on :8080")
@@ -25,30 +35,7 @@ func main() {
 	}
 }
 
-// Stubs for handlers (Moved to handlers package in real impl, but here for single-file demo)
-
 func AuthLogin(c *gin.Context) {
 	// TODO: Implement DB check
 	c.JSON(http.StatusOK, gin.H{"token": "dummy-jwt-token", "user": gin.H{"id": "1", "role": "student"}})
-}
-
-func ListExams(c *gin.Context) {
-	// TODO: Return exams from DB
-	c.JSON(http.StatusOK, []gin.H{
-		{"id": "exam-001", "title": "Matematika Dasar", "download_url": "http://store/exam-001.exam", "hash": "sha256:abc..."},
-	})
-}
-
-func GetUploadURL(c *gin.Context) {
-	// TODO: Generate Pre-signed URL
-	examId := c.Param("examId")
-	c.JSON(http.StatusOK, gin.H{
-		"upload_url": "http://store/upload/" + examId + "/attempt-xyz.ans",
-		"attempt_id": "attempt-xyz",
-	})
-}
-
-func ConfirmAttempt(c *gin.Context) {
-	// TODO: Verify signature and update DB
-	c.JSON(http.StatusOK, gin.H{"status": "received", "receipt_code": "RCPT-12345"})
 }
