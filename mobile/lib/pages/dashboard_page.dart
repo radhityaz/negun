@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:exam_app_offline/models/exam_package.dart';
 import 'package:exam_app_offline/pages/exam_page.dart';
@@ -48,7 +49,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Future<void> _downloadExam(ExamHeader exam) async {
     try {
-      final url = await ApiService.getDownloadUrl(exam.examId);
+      final url = await ApiService.getDownloadUrl(exam.examId, exam.version);
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Downloading...")));
       
       await ExamService.downloadExam(url, exam.examId, exam.version);
@@ -62,43 +63,16 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Future<void> _uploadAnswer(File file) async {
     try {
-      // Extract examId from filename (simplified)
-      // Filename format: att-TIMESTAMP.ans -> But we need ExamID. 
-      // Oops, ExamID is inside the file content (Header).
-      // Let's verify file first.
-      
-      // For MVP, assume we can upload to generic endpoint or we need to read header.
-      // Let's just upload to a generic handler if possible, or read header.
-      // ApiService.uploadAnswerFile needs examId.
-      
-      // We should read file to get ExamID.
-      // But file is encrypted package.
-      // The AnswerPackage is JSON. Header is plain text inside JSON? 
-      // Let's check AnswerPackage model.
-      // AnswerPackage: { header: AnswerHeader, ... }
-      // AnswerHeader has examId.
-      
-      String content = await file.readAsString();
-      // Simple regex to find exam_id without full parse if needed, or just full parse
-      // Let's full parse
-      // import 'dart:convert';
-      // Map<String, dynamic> jsonMap = jsonDecode(content);
-      // String examId = jsonMap['header']['exam_id'];
-      
-      // For now, let's just ask user to confirm or mock it.
-      // Or better: Implement helper in ExamService to peek header.
-      // Since I can't edit ExamService easily right now without context switch, let's do manual parse here.
-      
-      // String examId = ...
-      // For this MVP, let's hardcode or try to parse.
-      
-      // Attempt parse
-      // final pkg = jsonDecode(await file.readAsString());
-      // final examId = pkg['header']['exam_id'];
-      
-      // await ApiService.uploadAnswerFile(examId, file);
-      
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Upload logic not fully implemented in Dashboard yet. Use Share.")));
+      final content = await file.readAsString();
+      final pkg = jsonDecode(content);
+      final examId = pkg['header']['exam_id'];
+
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Mengunggah jawaban...")));
+      await ApiService.uploadAnswerFile(examId, file);
+
+      await file.delete();
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Upload berhasil. File lokal dibersihkan.")));
+      await _loadLocalFiles();
 
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));

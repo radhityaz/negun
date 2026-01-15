@@ -6,6 +6,7 @@ import '../models/exam_package.dart';
 class ApiService {
   // Ganti IP ini dengan IP laptop kamu (bukan localhost kalau run di emulator/HP fisik)
   static const String baseUrl = 'http://10.0.2.2:8080/api/v1'; 
+  static const String baseHost = 'http://10.0.2.2:8080';
 
   static Future<List<ExamHeader>> fetchAvailableExams() async {
     final response = await http.get(Uri.parse('$baseUrl/exams/available'));
@@ -28,11 +29,8 @@ class ApiService {
     }
   }
 
-  static Future<String> getDownloadUrl(String examId) async {
-    // Di backend MVP, list exams sudah include download_url
-    // Tapi kalau mau fetch spesifik lagi bisa buat endpoint baru
-    // Untuk sekarang kita ambil dari list saja di UI
-    return '$baseUrl/files/$examId-v1.exam'; // Simplifikasi MVP
+  static Future<String> getDownloadUrl(String examId, int version) async {
+    return '$baseHost/files/$examId-v$version.exam';
   }
 
   // Upload file .ans ke server
@@ -42,8 +40,12 @@ class ApiService {
     if (initResp.statusCode != 200) throw Exception('Failed to init upload');
     
     final initData = jsonDecode(initResp.body);
-    final uploadUrl = initData['upload_url'];
+    final uploadUrlRaw = initData['upload_url'];
     final attemptId = initData['attempt_id'];
+
+    final String uploadUrl = uploadUrlRaw.toString().startsWith('/')
+      ? '$baseHost${uploadUrlRaw.toString()}'
+      : uploadUrlRaw.toString();
 
     // 2. Upload File (Mock: Kirim ke endpoint dummy backend)
     // Di produksi: PUT binary ke Presigned URL

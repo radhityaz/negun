@@ -1,0 +1,23 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./backend/.env
+    volumes:
+      - backend_data:/app/data
+      - backend_storage:/app/storage
+
+  web_admin:
+    image: nginx:alpine
+    ports:
+      - "8081:80"
+    volumes:
+      - ./web_admin:/usr/share/nginx/html:ro
+
+volumes:
+  backend_data:
+  backend_storage:

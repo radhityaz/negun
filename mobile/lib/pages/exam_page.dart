@@ -26,10 +26,7 @@ class _ExamPageState extends State<ExamPage> with WidgetsBindingObserver {
   
   // Connectivity
   final Connectivity _connectivity = Connectivity();
-  StreamSubscription<ConnectivityResult>? _connectivitySubscription; // For older versions
-  // Note: newer connectivity_plus might use List<ConnectivityResult>
-  // We will try to handle compatibility or assume v5.0 behavior (single result or list depending on exact version)
-  // Let's use a timer check as a backup for robust detection
+  StreamSubscription? _connectivitySubscription;
   
   bool _isLocked = false;
 
@@ -61,10 +58,7 @@ class _ExamPageState extends State<ExamPage> with WidgetsBindingObserver {
 
     // Listen to changes
     // Using Stream.periodic as a fallback/robust checker + listener
-    _connectivity.onConnectivityChanged.listen((result) {
-      // Handle both List<ConnectivityResult> and ConnectivityResult for compatibility
-      // But since we can't dynamic dispatch easily here without knowing version, 
-      // let's rely on _checkConnectivity logic which pulls current state.
+    _connectivitySubscription = _connectivity.onConnectivityChanged.listen((_) {
       _checkConnectivity();
     });
   }
@@ -88,7 +82,9 @@ class _ExamPageState extends State<ExamPage> with WidgetsBindingObserver {
       }
     } else {
       if (_isLocked) {
-        Navigator.of(context, rootNavigator: true).pop(); // Close Dialog
+        if (Navigator.of(context, rootNavigator: true).canPop()) {
+          Navigator.of(context, rootNavigator: true).pop();
+        }
         setState(() {
           _isLocked = false;
         });
